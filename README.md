@@ -5,8 +5,7 @@
 
 use commands:-
 
-  chmod +x install_riya.sh
-  ./install_riya.sh
+  chmod +x install_riya.sh && ./install_riya.sh
 
 
 for starting use:-
