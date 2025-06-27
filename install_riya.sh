@@ -27,8 +27,6 @@ class RIYA:
         self.commands = {
             "scan network": self.scan_network,
             "play music": self.play_music,
-            "lights on": lambda: self.control_relay(1, True),
-            "lights off": lambda: self.control_relay(1, False),
             "check moisture": self.check_plant_moisture,
             "temperature": self.get_temperature,
             "humidity": self.get_humidity,
@@ -37,7 +35,36 @@ class RIYA:
             "give me information": self.give_information,
             "set a reminder": self.set_reminder,
             "set an alarm": self.set_alarm,
-            "what time is it": self.tell_time
+            "what time is it": self.tell_time,
+            "turn on light one": lambda: self.control_relay(1, True),
+            "turn on light two": lambda: self.control_relay(2, True),
+            "turn on light three": lambda: self.control_relay(3, True),
+            "turn on light four": lambda: self.control_relay(4, True),
+            "turn on light five": lambda: self.control_relay(5, True),
+            "turn on light six": lambda: self.control_relay(6, True),
+            "turn on light seven": lambda: self.control_relay(7, True),
+            "turn on light eight": lambda: self.control_relay(8, True),
+            "turn off light one": lambda: self.control_relay(1, False),
+            "turn off light two": lambda: self.control_relay(2, False),
+            "turn off light three": lambda: self.control_relay(3, False),
+            "turn off light four": lambda: self.control_relay(4, False),
+            "turn off light five": lambda: self.control_relay(5, False),
+            "turn off light six": lambda: self.control_relay(6, False),
+            "turn off light seven": lambda: self.control_relay(7, False),
+            "turn off light eight": lambda: self.control_relay(8, False),
+            "turn on pump": lambda: self.control_relay(9, True),
+            "turn off pump": lambda: self.control_relay(9, False),
+            "turn on all lights": self.turn_on_all_lights,
+            "turn off all lights": self.turn_off_all_lights,
+            "toggle all lights": self.toggle_all_lights,
+            "turn on light one after 10 minutes": lambda: self.schedule_light_on(1, 10),
+            "turn off light one after 5 minutes": lambda: self.schedule_light_off(1, 5),
+            "turn on all lights after 1 hour": lambda: self.schedule_all_lights_on(60),
+            "turn off all lights after 30 minutes": lambda: self.schedule_all_lights_off(30),
+            "how are you": self.respond_how_are_you,
+            "what can you do": self.respond_what_can_you_do,
+            "tell me something interesting": self.tell_interesting_fact,
+            "let's chat": self.start_chat
         }
         self.reminders = []
         self.alarms = []
@@ -49,7 +76,7 @@ class RIYA:
         emit('start_listening')
 
     def speak(self, text):
-        tts = gTTS(text=text, lang='en', slow=False)  # Use 'en' for English
+        tts = gTTS(text=text, lang='en', slow=False)
         audio_file = "/tmp/riya_voice.mp3"
         tts.save(audio_file)
         playsound.playsound(audio_file)
@@ -82,14 +109,12 @@ class RIYA:
         return "I can provide information on various topics. Just ask me anything!"
 
     def set_reminder(self):
-        # This is a placeholder for setting reminders
         reminder_text = input("What should I remind you about? ")
         reminder_time = input("When should I remind you? (e.g., 'in 10 minutes' or 'at 3 PM'): ")
         self.reminders.append((reminder_time, reminder_text))
         return f"Reminder set for {reminder_time}: {reminder_text}"
 
     def set_alarm(self):
-        # This is a placeholder for setting alarms
         alarm_time = input("Please tell me the time for the alarm (e.g., 'in 10 minutes' or 'at 3 PM'): ")
         self.alarms.append(alarm_time)
         return f"Alarm set for {alarm_time}."
@@ -98,11 +123,75 @@ class RIYA:
         current_time = datetime.now().strftime("%H:%M:%S")
         return f"The current time is {current_time}."
 
+    def control_relay(self, relay_number, state):
+        # Placeholder for actual GPIO control
+        if state:
+            return f"Relay {relay_number} turned ON."
+        else:
+            return f"Relay {relay_number} turned OFF."
+
+    def turn_on_all_lights(self):
+        for i in range(1, 9):
+            self.control_relay(i, True)
+        return "All lights turned ON."
+
+    def turn_off_all_lights(self):
+        for i in range(1, 9):
+            self.control_relay(i, False)
+        return "All lights turned OFF."
+
+    def toggle_all_lights(self):
+        for i in range(1, 9):
+            # Placeholder for toggling logic
+            # This should check the current state and toggle accordingly
+            # For now, we will just turn them all on for demonstration
+            self.control_relay(i, True)  # This should be replaced with actual toggle logic
+        return "All lights toggled."
+
+    def schedule_light_on(self, light_number, delay):
+        threading.Timer(delay * 60, self.control_relay, args=(light_number, True)).start()
+        return f"Light {light_number} will be turned ON after {delay} minutes."
+
+    def schedule_light_off(self, light_number, delay):
+        threading.Timer(delay * 60, self.control_relay, args=(light_number, False)).start()
+        return f"Light {light_number} will be turned OFF after {delay} minutes."
+
+    def schedule_all_lights_on(self, delay):
+        threading.Timer(delay * 60, self.turn_on_all_lights).start()
+        return f"All lights will be turned ON after {delay} minutes."
+
+    def schedule_all_lights_off(self, delay):
+        threading.Timer(delay * 60, self.turn_off_all_lights).start()
+        return f"All lights will be turned OFF after {delay} minutes."
+
+    def respond_how_are_you(self):
+        responses = [
+            "I'm just a program, but I'm here to help you!",
+            "I'm functioning as expected, thank you!",
+            "I'm doing great, ready to assist you!"
+        ]
+        return random.choice(responses)
+
+    def respond_what_can_you_do(self):
+        return "I can control lights, monitor your plants, play music, and much more! Just ask me."
+
+    def tell_interesting_fact(self):
+        facts = [
+            "Did you know that honey never spoils? Archaeologists have found pots of honey in ancient Egyptian tombs that are over 3000 years old and still edible!",
+            "Bananas are berries, but strawberries are not!",
+            "Octopuses have three hearts and blue blood."
+        ]
+        return random.choice(facts)
+
+    def start_chat(self):
+        self.speak("I'm here to chat with you! What would you like to talk about?")
+        # Here you can implement a simple chat loop or further interaction logic
+
     def process_command(self, command):
         for cmd, action in self.commands.items():
             if cmd in command.lower():
                 return action()
-        return "Sorry, I didn't understand that"
+        return "Sorry, I didn't understand that."
 
     def get_system_stats(self):
         cpu_usage = subprocess.check_output("top -bn1 | grep 'Cpu(s)' | sed 's/.*, *\\$[0-9.]*\\$%* id.*/\\1/' | awk '{print 100 - $1}'", shell=True).decode('utf-8').strip()
@@ -121,12 +210,10 @@ class RIYA:
         return f"Current soil moisture level is {moisture_level}%."
 
     def get_temperature(self):
-        # Simulated temperature reading
         temperature = random.uniform(20.0, 30.0)
         return f"Current temperature is {temperature:.2f}°C."
 
     def get_humidity(self):
-        # Simulated humidity reading
         humidity = random.uniform(30.0, 70.0)
         return f"Current humidity level is {humidity:.2f}%."
 
@@ -329,7 +416,7 @@ cat > src/web/templates/dashboard.html << 'EOL'
     </div>
 
     <div class="panel" id="system-stats">
-        <h2>System Stats</h2>
+        <h2>System Stats</ h2>
         <div class="stat-card">
             <h3>CPU Usage</h3>
             <p><span id="cpu-usage">0%</span></p>
@@ -356,7 +443,7 @@ cat > src/web/templates/dashboard.html << 'EOL'
         </div>
     </div>
 
-    <div class="floating-text">RIYA AI</div>
+   <div class="floating-text">RIYA AI</div>
 
     <script>
         const socket = io();
@@ -417,7 +504,7 @@ Description=RIYA AI Assistant
 After=network.target
 
 [Service]
-User         =$USER
+User            =$USER
 WorkingDirectory=/home/$USER/riya_ai
 ExecStart=/usr/bin/python3 src/main.py
 Restart=always
