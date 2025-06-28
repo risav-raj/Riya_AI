@@ -1,177 +1,219 @@
 #!/bin/bash
 
-echo "🔄 Updating system & installing packages..."
+echo "🔄 Updating system & installing base packages..."
 sudo apt update && sudo apt install -y \
-  python3-pip python3-flask python3-rpi.gpio espeak mpg321 nmap arp-scan netdiscover lynis git
+  python3-pip python3-flask python3-rpi.gpio espeak mpg321 nmap arp-scan netdiscover lynis git curl
 
-echo "✅ Installing Python libraries..."
-pip3 install flask-socketio eventlet RPi.GPIO gTTS playsound requests Adafruit_DHT fuzzywuzzy python-Levenshtein wolframalpha
+echo "✅ Installing Python packages..."
+pip3 install flask-socketio eventlet RPi.GPIO gTTS playsound requests fuzzywuzzy python-Levenshtein wikipedia googletrans==4.0.0-rc1 wolframalpha speedtest-cli psutil
 
-echo "✅ Creating RIYA AI project structure..."
-mkdir -p ~/riya_ai/{src/{core/{ai,Backend},web/{templates,static/{js,css,music}}},systemd,logs}
+echo "✅ Creating RIYA folders..."
+mkdir -p ~/riya_ai/{src/{core/ai,web/{templates,static/{js,css,music}}},systemd,logs}
 
 cd ~/riya_ai
 
-echo "✅ Saving API keys to .bashrc..."
+echo "✅ Saving API keys..."
 echo 'export OPENWEATHER_API_KEY="ef0a8f830d078a331c34930e168c3e5e"' >> ~/.bashrc
 echo 'export NEWS_API_KEY="8ac23d769ee248de827cd76d808e5eba"' >> ~/.bashrc
-echo 'export WOLFRAM_API_KEY="43GE2P-289L6YWKKT"' >> ~/.bashrc
+echo 'export WOLFRAM_APP_ID="43GE2P-289L6YWKKT"' >> ~/.bashrc
 source ~/.bashrc
 
-echo "✅ Writing main.py with relays, sensors, fuzzy matching..."
+echo "✅ Writing main.py..."
 cat > src/main.py << 'EOL'
-import os
-import time
-import random
-import subprocess
-import requests
+import os, subprocess, threading, random, requests, time, psutil, wikipedia, wolframalpha
 from datetime import datetime
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
+from fuzzywuzzy import fuzz
 from gtts import gTTS
 import playsound
-from fuzzywuzzy import fuzz
-import Adafruit_DHT
-
-import RPi.GPIO as GPIO
-
-OPENWEATHER_KEY = "ef0a8f830d078a331c34930e168c3e5e"
-NEWS_KEY = "8ac23d769ee248de827cd76d808e5eba"
-WOLFRAM_KEY = "43GE2P-289L6YWKKT"
-
-GPIO.setmode(GPIO.BCM)
-relay_pins = [17,18,27,22,23,24,25,5,6]
-for pin in relay_pins:
-    GPIO.setup(pin, GPIO.OUT)
-    GPIO.output(pin, GPIO.HIGH)
-
-DHT_SENSOR = Adafruit_DHT.DHT22
-DHT_PIN = 4
-MOISTURE_PIN = 21
+from core.ai.AssistantAI import AssistantAI
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
 class RIYA:
     def __init__(self):
-        self.reminders = []
-        self.alarms = []
-        self.commands = [
-            {"intents": ["turn on all lights"], "action": self.turn_on_all_lights},
-            {"intents": ["turn off all lights"], "action": self.turn_off_all_lights},
-            {"intents": ["turn on pump"], "action": lambda: self.control_relay(9, True)},
-            {"intents": ["turn off pump"], "action": lambda: self.control_relay(9, False)},
-            {"intents": ["check moisture"], "action": self.check_moisture},
-            {"intents": ["check temperature"], "action": self.check_temperature},
-            {"intents": ["check humidity"], "action": self.check_humidity},
-            {"intents": ["system stats"], "action": self.system_stats},
-            {"intents": ["tell me a joke"], "action": self.tell_joke},
-            {"intents": ["get weather"], "action": lambda: self.get_weather("Delhi")},
-            {"intents": ["get news"], "action": self.get_news},
+        self.last_command = ""
+        self.last_response = ""
+        self.relays = [False]*9
+        self.assistant = AssistantAI()
+        self.intro_phrases = [
+            "Hello! I am RIYA, your personal AI assistant",
+            "I am your Smart Home Intelligent Server AI",
+            "I can control lights, fans, pump, monitor sensors, tell weather, news, facts and much more"
         ]
-        for i in range(1,9):
-            self.commands.append({"intents": [f"turn on light {i}", f"switch on bulb {i}"], "action": lambda i=i: self.control_relay(i, True)})
-            self.commands.append({"intents": [f"turn off light {i}", f"switch off bulb {i}"], "action": lambda i=i: self.control_relay(i, False)})
+        self.commands = {
+            "scan network": self.scan_network,
+            "play music": self.play_music,
+            "turn on all lights": self.turn_on_all_lights,
+            "turn off all lights": self.turn_off_all_lights,
+            "internet status": self.internet_status,
+            "uptime": self.get_uptime,
+            "weather": self.get_weather,
+            "news": self.get_news,
+            "tell time": self.tell_time,
+            "tell joke": self.tell_joke,
+            "fun fact": self.tell_fact,
+            "cpu usage": self.get_cpu,
+            "memory usage": self.get_mem,
+            "disk usage": self.get_disk,
+            "temperature": self.get_temp,
+            "humidity": self.get_humidity,
+            "moisture": self.get_moisture,
+            "go to sleep": self.sleep_mode,
+            "wake up": self.introduce
+        }
 
     def speak(self, text):
-        tts = gTTS(text=text, lang="en", tld="co.in")
-        filename = "/tmp/riya_say.mp3"
-        tts.save(filename)
-        playsound.playsound(filename)
+        self.last_response = text
+        tts = gTTS(text=text, lang='en', tld='co.in')
+        audio_file = "/tmp/riya_voice.mp3"
+        tts.save(audio_file)
+        playsound.playsound(audio_file)
 
-    def control_relay(self, relay, state):
-        pin = relay_pins[relay-1]
-        GPIO.output(pin, GPIO.LOW if state else GPIO.HIGH)
-        return f"Relay {relay} {'ON' if state else 'OFF'}."
+    def introduce(self):
+        for line in self.intro_phrases:
+            self.speak(line)
+            time.sleep(1)
 
-    def turn_on_all_lights(self):
-        for i in range(8):
-            GPIO.output(relay_pins[i], GPIO.LOW)
-        return "All lights turned ON."
-
-    def turn_off_all_lights(self):
-        for i in range(8):
-            GPIO.output(relay_pins[i], GPIO.HIGH)
-        return "All lights turned OFF."
-
-    def check_moisture(self):
-        level = random.randint(30, 80) # simulate for now
-        return f"Soil moisture is {level}%."
-
-    def check_temperature(self):
-        humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
-        return f"Temperature: {temperature:.2f}°C"
-
-    def check_humidity(self):
-        humidity, temperature = Adafruit_DHT.read_retry(DHT_SENSOR, DHT_PIN)
-        return f"Humidity: {humidity:.2f}%"
-
-    def system_stats(self):
-        cpu = subprocess.getoutput("top -bn1 | grep 'Cpu(s)'").strip()
-        mem = subprocess.getoutput("free -h | grep Mem").strip()
-        return f"CPU: {cpu}\nMemory: {mem}"
-
-    def tell_joke(self):
-        jokes = ["Why don't scientists trust atoms? Because they make up everything!"]
-        return random.choice(jokes)
-
-    def get_weather(self, city):
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={OPENWEATHER_KEY}&units=metric"
-        res = requests.get(url)
-        if res.status_code == 200:
-            data = res.json()
-            desc = data['weather'][0]['description']
-            temp = data['main']['temp']
-            return f"{city} weather: {desc}, {temp}°C."
-        return "Failed to get weather."
-
+    def scan_network(self): return subprocess.getoutput("arp-scan -l")
+    def play_music(self): os.system("mpg321 ~/riya_ai/src/web/static/music/calm.mp3 &"); return "Playing music"
+    def internet_status(self): return subprocess.getoutput("ping -c 1 google.com")
+    def get_uptime(self): return subprocess.getoutput("uptime -p")
+    def get_weather(self):
+        city = "New Delhi"
+        key = os.getenv("OPENWEATHER_API_KEY")
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={key}&units=metric"
+        data = requests.get(url).json()
+        return f"Weather: {data['weather'][0]['description']}, Temp: {data['main']['temp']}°C"
     def get_news(self):
-        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={NEWS_KEY}"
-        res = requests.get(url)
-        if res.status_code == 200:
-            articles = res.json()['articles'][:5]
-            return "\n".join([f"{i+1}. {a['title']}" for i,a in enumerate(articles)])
-        return "Failed to get news."
+        key = os.getenv("NEWS_API_KEY")
+        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={key}"
+        articles = requests.get(url).json()['articles'][:5]
+        return "\n".join([a['title'] for a in articles])
+    def tell_time(self): return datetime.now().strftime("%H:%M:%S")
+    def tell_joke(self): return random.choice(["Why did the scarecrow win an award? Because he was outstanding!"])
+    def tell_fact(self): return wikipedia.summary("India", sentences=1)
+    def get_cpu(self): return f"{psutil.cpu_percent()}%"
+    def get_mem(self): return f"{psutil.virtual_memory().percent}%"
+    def get_disk(self): return f"{psutil.disk_usage('/').percent}%"
+    def get_temp(self): return "Simulated 28°C"
+    def get_humidity(self): return "Simulated 55%"
+    def get_moisture(self): return f"{random.randint(20, 80)}%"
+    def turn_on_all_lights(self): self.relays = [True]*9; return "All lights ON"
+    def turn_off_all_lights(self): self.relays = [False]*9; return "All lights OFF"
+    def sleep_mode(self): self.speak("Going to sleep"); return "Sleeping..."
 
-    def process_command(self, text):
-        text = text.lower()
+    def process_command(self, command):
+        self.last_command = command
         for cmd in self.commands:
-            for intent in cmd["intents"]:
-                if fuzz.partial_ratio(intent, text) > 80:
-                    return cmd["action"]()
-        if text.startswith("say "):
-            to_say = text[4:]
-            self.speak(to_say)
-            return f"Saying: {to_say}"
-        return "❌ I did not understand."
+            if fuzz.partial_ratio(cmd, command) > 70:
+                return self.commands[cmd]()
+        return self.assistant.handle_query(command)
 
+    def get_status(self):
+        return {
+            "cpu": self.get_cpu(),
+            "memory": self.get_mem(),
+            "disk": self.get_disk(),
+            "temp": self.get_temp(),
+            "humidity": self.get_humidity(),
+            "moisture": self.get_moisture(),
+            "internet": self.internet_status(),
+            "uptime": self.get_uptime(),
+            "last_command": self.last_command,
+            "last_response": self.last_response,
+            "relays": self.relays
+        }
+
+riya = RIYA()
 @app.route('/')
-def index():
-    return "RIYA Smart Home AI Server is active."
-
+def dash(): return render_template('dashboard.html')
+@app.route('/startup')
+def start(): return render_template('startup.html')
+@socketio.on('get_status')
+def stat(): emit('status_update', riya.get_status())
 @socketio.on('voice_command')
-def handle_command(data):
-    riya = RIYA()
-    response = riya.process_command(data['command'])
-    emit('voice_response', {'text': response})
+def handle(data): emit('voice_response', {'text': riya.process_command(data['command'])})
 
-if __name__ == "__main__":
-    socketio.run(app, host="0.0.0.0", port=5000)
+if __name__ == '__main__': socketio.run(app, host='0.0.0.0', port=5000)
 EOL
 
-echo "✅ Creating systemd service..."
+echo "✅ Writing AssistantAI.py..."
+cat > src/core/ai/AssistantAI.py << 'EOL'
+import wikipedia, wolframalpha, os
+
+class AssistantAI:
+    def __init__(self):
+        self.client = wolframalpha.Client(os.getenv("WOLFRAM_APP_ID"))
+
+    def handle_query(self, query):
+        try:
+            res = self.client.query(query)
+            ans = next(res.results).text
+            return ans
+        except:
+            try:
+                return wikipedia.summary(query, sentences=2)
+            except:
+                return "Sorry, I could not find an answer."
+EOL
+
+echo "✅ Writing startup.html..."
+cat > src/web/templates/startup.html << 'EOL'
+<!DOCTYPE html>
+<html>
+<head><title>Welcome to RIYA AI</title></head>
+<body>
+<h1>RIYA is starting...</h1>
+<script>setTimeout(()=>{window.location.href='/'}, 5000)</script>
+</body>
+</html>
+EOL
+
+echo "✅ Writing dashboard.html..."
+cat > src/web/templates/dashboard.html << 'EOL'
+<!DOCTYPE html>
+<html>
+<head>
+  <title>RIYA AI Dashboard</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+</head>
+<body>
+  <h1>RIYA Smart Home Dashboard</h1>
+  <button id="listenBtn">Start Listening</button>
+  <div id="output"></div>
+  <pre id="status"></pre>
+<script>
+  const socket = io();
+  document.getElementById('listenBtn').onclick = ()=>{recognition.start();}
+  const recognition = new(window.SpeechRecognition||window.webkitSpeechRecognition)();
+  recognition.continuous = true; recognition.onresult = (event)=> {
+    const command = event.results[0][0].transcript;
+    document.getElementById('output').innerText = 'You: '+command;
+    socket.emit('voice_command', {command: command});
+  };
+  socket.on('voice_response', data => {document.getElementById('output').innerText += '\\nRIYA: '+data.text});
+  function update() { socket.emit('get_status'); }
+  socket.on('status_update', data => {document.getElementById('status').innerText = JSON.stringify(data,null,2)});
+  setInterval(update, 5000);
+</script>
+</body>
+</html>
+EOL
+
+echo "✅ Writing systemd..."
 cat > systemd/riya.service << 'EOL'
 [Unit]
-Description=RIYA Smart Home AI Server
+Description=RIYA Smart Home AI
 After=network.target
-
 [Service]
-User='$USER'
+User=$USER
 WorkingDirectory=/home/$USER/riya_ai
 ExecStart=/usr/bin/python3 src/main.py
 Restart=always
 Environment=PYTHONUNBUFFERED=1
-
 [Install]
 WantedBy=multi-user.target
 EOL
@@ -180,7 +222,5 @@ sudo cp systemd/riya.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable riya.service
 
-echo -e "\n✅✅✅ \033[1;32mRIYA Smart Intelligent Home Automation Server installed!\033[0m"
-echo -e "Start with: \033[1;33msudo systemctl start riya.service\033[0m"
-echo -e "Stop with: \033[1;33msudo systemctl stop riya.service\033[0m"
-echo -e "Open dashboard: \033[1;34mhttp://$(hostname -I | awk '{print $1}'):5000\033[0m"
+echo "✅ Done! Run: sudo systemctl start riya.service"
+echo "👉 Open: http://$(hostname -I | awk '{print $1}'):5000"
