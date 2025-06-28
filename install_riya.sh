@@ -7,6 +7,7 @@ import time
 import json
 import subprocess
 import random
+import requests
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template
 from flask_socketio import SocketIO, emit
@@ -64,12 +65,23 @@ class RIYA:
             "how are you": self.respond_how_are_you,
             "what can you do": self.respond_what_can_you_do,
             "tell me something interesting": self.tell_interesting_fact,
-            "let's chat": self.start_chat
+            "let's chat": self.start_chat,
+            "weather in": self.get_weather,
+            "top news": self.get_news
         }
         self.reminders = []
         self.alarms = []
 
     def introduce(self):
+        current_hour = datetime.now().hour
+        if current_hour < 12:
+            greeting = "Good morning!"
+        elif 12 <= current_hour < 18:
+            greeting = "Good afternoon!"
+        else:
+            greeting = "Good evening!"
+        
+        self.speak(greeting)
         for phrase in self.intro_phrases:
             self.speak(phrase)
             time.sleep(1.5)
@@ -143,8 +155,6 @@ class RIYA:
     def toggle_all_lights(self):
         for i in range(1, 9):
             # Placeholder for toggling logic
-            # This should check the current state and toggle accordingly
-            # For now, we will just turn them all on for demonstration
             self.control_relay(i, True)  # This should be replaced with actual toggle logic
         return "All lights toggled."
 
@@ -185,7 +195,6 @@ class RIYA:
 
     def start_chat(self):
         self.speak("I'm here to chat with you! What would you like to talk about?")
-        # Here you can implement a simple chat loop or further interaction logic
 
     def process_command(self, command):
         for cmd, action in self.commands.items():
@@ -216,6 +225,29 @@ class RIYA:
     def get_humidity(self):
         humidity = random.uniform(30.0, 70.0)
         return f"Current humidity level is {humidity:.2f}%."
+
+    def get_weather(self, location):
+        api_key = "YOUR_API_KEY"  # Replace with your OpenWeatherMap API key
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={location}&appid={api_key}&units=metric"
+        response = requests.get(url)
+        if response.status_code == 200:
+            data = response.json()
+            weather_description = data['weather'][0]['description']
+            temperature = data['main']['temp']
+            return f"The weather in {location} is currently {weather_description} with a temperature of {temperature}°C."
+        else:
+            return "Sorry, I couldn't fetch the weather information."
+
+    def get_news(self):
+        api_key = "YOUR_NEWS_API_KEY"  # Replace with your News API key
+        url = f"https://newsapi.org/v2/top-headlines?country=us&apiKey={api_key}"
+        response = requests.get(url)
+        if response.status_code == 200:
+            articles = response.json()['articles'][:10]
+            news_list = [f"{i+1}. {article['title']}" for i, article in enumerate(articles)]
+            return "\n".join(news_list)
+        else:
+            return "Sorry, I couldn't fetch the news."
 
 @app.route('/')
 def dashboard():
@@ -387,7 +419,7 @@ cat > src/web/templates/dashboard.html << 'EOL'
             padding: 20px;
             margin: 10px;
             box-shadow: 0 2px 10px rgba(0, 255, 255, 0.5);
-            transition: transform 0.3s, box-shadow 0.3s;
+            transition: transform 0.3s , box-shadow 0.3s;
         }
         .stat-card:hover {
             transform: scale(1.05);
@@ -416,14 +448,14 @@ cat > src/web/templates/dashboard.html << 'EOL'
     </div>
 
     <div class="panel" id="system-stats">
-        <h2>System Stats</ h2>
+        <h2>System Stats</h2>
         <div class="stat-card">
             <h3>CPU Usage</h3>
             <p><span id="cpu-usage">0%</span></p>
         </div>
         <div class="stat-card">
             <h3>Memory Usage</h3>
-            <p><span id="memory-usage">0%</span>%</p>
+            <p><span id="memory-usage">0%</span></p>
         </div>
         <div class="stat-card">
             <h3>Disk Usage</h3>
@@ -443,7 +475,7 @@ cat > src/web/templates/dashboard.html << 'EOL'
         </div>
     </div>
 
-   <div class="floating-text">RIYA AI</div>
+    <div class="floating-text">RIYA AI</div>
 
     <script>
         const socket = io();
@@ -491,7 +523,7 @@ mkdir -p src/web/static/music && \
 wget -O src/web/static/music/calm.mp3 https://example.com/sample-music.mp3 && \
 cat > setup.sh << 'EOL'
 #!/bin/bash
-pip3 install flask-socketio eventlet RPi.GPIO gTTS playsound
+pip3 install flask-socketio eventlet RPi.GPIO gTTS playsound requests
 sudo usermod -a -G gpio $USER
 sudo cp systemd/riya.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -504,7 +536,7 @@ Description=RIYA AI Assistant
 After=network.target
 
 [Service]
-User            =$USER
+User              =$USER
 WorkingDirectory=/home/$USER/riya_ai
 ExecStart=/usr/bin/python3 src/main.py
 Restart=always
