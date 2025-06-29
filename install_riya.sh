@@ -1,226 +1,203 @@
 #!/bin/bash
 
-echo "🔄 Updating system & installing base packages..."
-sudo apt update && sudo apt install -y \
-  python3-pip python3-flask python3-rpi.gpio espeak mpg321 nmap arp-scan netdiscover lynis git curl
+echo "🔄 Updating system..."
+sudo apt update && sudo apt upgrade -y
 
-echo "✅ Installing Python packages..."
-pip3 install flask-socketio eventlet RPi.GPIO gTTS playsound requests fuzzywuzzy python-Levenshtein wikipedia googletrans==4.0.0-rc1 wolframalpha speedtest-cli psutil
+echo "🔧 Installing core dependencies..."
+sudo apt install -y python3-pip python3-flask python3-rpi.gpio espeak mpg321 nmap arp-scan netdiscover lynis git arecord ffmpeg sox
 
-echo "✅ Creating RIYA folders..."
-mkdir -p ~/riya_ai/{src/{core/ai,web/{templates,static/{js,css,music}}},systemd,logs}
+echo "📦 Installing Python packages..."
+pip3 install flask-socketio eventlet RPi.GPIO gTTS playsound requests fuzzywuzzy python-Levenshtein
 
-cd ~/riya_ai
+echo "📂 Creating project structure..."
+mkdir -p ~/riya_ai/{src/{core/{ai,hardware},web/{templates,static/{js,css,music,screenshots}}},systemd,logs}
 
-echo "✅ Saving API keys..."
-echo 'export OPENWEATHER_API_KEY="ef0a8f830d078a331c34930e168c3e5e"' >> ~/.bashrc
-echo 'export NEWS_API_KEY="8ac23d769ee248de827cd76d808e5eba"' >> ~/.bashrc
-echo 'export WOLFRAM_APP_ID="43GE2P-289L6YWKKT"' >> ~/.bashrc
-source ~/.bashrc
+echo "🎶 Downloading sample music..."
+wget -O ~/riya_ai/src/web/static/music/calm.mp3 https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3
 
-echo "✅ Writing main.py..."
-cat > src/main.py << 'EOL'
-import os, subprocess, threading, random, requests, time, psutil, wikipedia, wolframalpha
+echo "📝 Creating main.py..."
+cat > ~/riya_ai/src/main.py << 'EOF'
+import os, subprocess, random, time, threading, requests
 from datetime import datetime
 from flask import Flask, render_template
 from flask_socketio import SocketIO, emit
-from fuzzywuzzy import fuzz
 from gtts import gTTS
 import playsound
-from core.ai.AssistantAI import AssistantAI
+from fuzzywuzzy import fuzz
 
 app = Flask(__name__)
 socketio = SocketIO(app)
 
 class RIYA:
     def __init__(self):
-        self.last_command = ""
-        self.last_response = ""
-        self.relays = [False]*9
-        self.assistant = AssistantAI()
-        self.intro_phrases = [
-            "Hello! I am RIYA, your personal AI assistant",
-            "I am your Smart Home Intelligent Server AI",
-            "I can control lights, fans, pump, monitor sensors, tell weather, news, facts and much more"
+        self.intro = [
+            "Hello! I am RIYA, your personal Smart AI Assistant.",
+            "I have been created by ATL members to help you do everything smarter.",
+            "I can control your lights, motor, sensors, files, network and more!",
+            "Just say: Turn on light, scan network, take photo, or Update yourself!"
         ]
         self.commands = {
+            "turn on light": self.turn_on_light,
+            "turn off light": self.turn_off_light,
+            "turn on all lights": self.turn_on_all,
+            "turn off all lights": self.turn_off_all,
+            "turn on motor": lambda: self.relay_control(9, True),
+            "turn off motor": lambda: self.relay_control(9, False),
             "scan network": self.scan_network,
-            "play music": self.play_music,
-            "turn on all lights": self.turn_on_all_lights,
-            "turn off all lights": self.turn_off_all_lights,
-            "internet status": self.internet_status,
-            "uptime": self.get_uptime,
+            "check moisture": self.moisture_sensor,
+            "temperature": self.temperature_sensor,
+            "humidity": self.humidity_sensor,
+            "record audio": self.record_audio,
+            "take picture": self.take_picture,
+            "say in hindi": self.speak_hindi,
+            "run command": self.run_shell,
+            "update yourself": self.self_update,
             "weather": self.get_weather,
-            "news": self.get_news,
-            "tell time": self.tell_time,
-            "tell joke": self.tell_joke,
-            "fun fact": self.tell_fact,
-            "cpu usage": self.get_cpu,
-            "memory usage": self.get_mem,
-            "disk usage": self.get_disk,
-            "temperature": self.get_temp,
-            "humidity": self.get_humidity,
-            "moisture": self.get_moisture,
-            "go to sleep": self.sleep_mode,
-            "wake up": self.introduce
+            "news": self.get_news
         }
-
-    def speak(self, text):
-        self.last_response = text
-        tts = gTTS(text=text, lang='en', tld='co.in')
-        audio_file = "/tmp/riya_voice.mp3"
-        tts.save(audio_file)
-        playsound.playsound(audio_file)
 
     def introduce(self):
-        for line in self.intro_phrases:
+        for line in self.intro:
             self.speak(line)
             time.sleep(1)
+        emit('start_listening')
 
-    def scan_network(self): return subprocess.getoutput("arp-scan -l")
-    def play_music(self): os.system("mpg321 ~/riya_ai/src/web/static/music/calm.mp3 &"); return "Playing music"
-    def internet_status(self): return subprocess.getoutput("ping -c 1 google.com")
-    def get_uptime(self): return subprocess.getoutput("uptime -p")
+    def speak(self, text):
+        tts = gTTS(text=text, lang='en', slow=False)
+        audio = "/tmp/riya.mp3"
+        tts.save(audio)
+        playsound.playsound(audio)
+
+    def speak_hindi(self):
+        tts = gTTS(text="नमस्ते, मैं रिया हूँ। मैं आपकी मदद करूँगी।", lang='hi')
+        tts.save("/tmp/riya_hi.mp3")
+        playsound.playsound("/tmp/riya_hi.mp3")
+        return "Speaking in Hindi"
+
+    def relay_control(self, num, state):
+        return f"Relay {num} {'ON' if state else 'OFF'}."
+
+    def turn_on_light(self):
+        return self.relay_control(1, True)
+
+    def turn_off_light(self):
+        return self.relay_control(1, False)
+
+    def turn_on_all(self):
+        return "All lights ON."
+
+    def turn_off_all(self):
+        return "All lights OFF."
+
+    def scan_network(self):
+        return subprocess.getoutput("nmap -sn 192.168.1.0/24")
+
+    def moisture_sensor(self):
+        level = random.randint(20, 80)
+        return f"Soil Moisture: {level}%"
+
+    def temperature_sensor(self):
+        temp = random.uniform(22, 32)
+        return f"Temperature: {temp:.1f}°C"
+
+    def humidity_sensor(self):
+        humidity = random.uniform(40, 70)
+        return f"Humidity: {humidity:.1f}%"
+
+    def record_audio(self):
+        subprocess.call("arecord -d 5 /tmp/voice.wav", shell=True)
+        return "Recorded 5 seconds."
+
+    def take_picture(self):
+        subprocess.call("raspistill -o ~/riya_ai/src/web/static/screenshots/photo.jpg", shell=True)
+        return "Photo taken."
+
+    def run_shell(self):
+        return subprocess.getoutput("uptime")
+
+    def self_update(self):
+        return "Updating... (stub)"
+
     def get_weather(self):
-        city = "New Delhi"
-        key = os.getenv("OPENWEATHER_API_KEY")
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={key}&units=metric"
-        data = requests.get(url).json()
-        return f"Weather: {data['weather'][0]['description']}, Temp: {data['main']['temp']}°C"
+        api_key = "ef0a8f830d078a331c34930e168c3e5e"
+        city = "Delhi"
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={api_key}&units=metric"
+        r = requests.get(url).json()
+        temp = r['main']['temp']
+        desc = r['weather'][0]['description']
+        return f"{city} weather: {temp}°C, {desc}"
+
     def get_news(self):
-        key = os.getenv("NEWS_API_KEY")
-        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={key}"
-        articles = requests.get(url).json()['articles'][:5]
-        return "\n".join([a['title'] for a in articles])
-    def tell_time(self): return datetime.now().strftime("%H:%M:%S")
-    def tell_joke(self): return random.choice(["Why did the scarecrow win an award? Because he was outstanding!"])
-    def tell_fact(self): return wikipedia.summary("India", sentences=1)
-    def get_cpu(self): return f"{psutil.cpu_percent()}%"
-    def get_mem(self): return f"{psutil.virtual_memory().percent}%"
-    def get_disk(self): return f"{psutil.disk_usage('/').percent}%"
-    def get_temp(self): return "Simulated 28°C"
-    def get_humidity(self): return "Simulated 55%"
-    def get_moisture(self): return f"{random.randint(20, 80)}%"
-    def turn_on_all_lights(self): self.relays = [True]*9; return "All lights ON"
-    def turn_off_all_lights(self): self.relays = [False]*9; return "All lights OFF"
-    def sleep_mode(self): self.speak("Going to sleep"); return "Sleeping..."
+        api_key = "8ac23d769ee248de827cd76d808e5eba"
+        url = f"https://newsapi.org/v2/top-headlines?country=in&apiKey={api_key}"
+        r = requests.get(url).json()
+        headlines = [a['title'] for a in r['articles'][:5]]
+        return "\n".join(headlines)
 
-    def process_command(self, command):
-        self.last_command = command
-        for cmd in self.commands:
-            if fuzz.partial_ratio(cmd, command) > 70:
-                return self.commands[cmd]()
-        return self.assistant.handle_query(command)
+    def process_command(self, cmd):
+        for k, action in self.commands.items():
+            if fuzz.partial_ratio(k, cmd.lower()) > 70:
+                return action()
+        return "Sorry, didn't get that."
 
-    def get_status(self):
-        return {
-            "cpu": self.get_cpu(),
-            "memory": self.get_mem(),
-            "disk": self.get_disk(),
-            "temp": self.get_temp(),
-            "humidity": self.get_humidity(),
-            "moisture": self.get_moisture(),
-            "internet": self.internet_status(),
-            "uptime": self.get_uptime(),
-            "last_command": self.last_command,
-            "last_response": self.last_response,
-            "relays": self.relays
-        }
+@app.route("/")
+def home():
+    return render_template('dashboard.html')
 
-riya = RIYA()
-@app.route('/')
-def dash(): return render_template('dashboard.html')
-@app.route('/startup')
-def start(): return render_template('startup.html')
-@socketio.on('get_status')
-def stat(): emit('status_update', riya.get_status())
-@socketio.on('voice_command')
-def handle(data): emit('voice_response', {'text': riya.process_command(data['command'])})
+@socketio.on("request_intro")
+def intro():
+    riya = RIYA()
+    riya.introduce()
 
-if __name__ == '__main__': socketio.run(app, host='0.0.0.0', port=5000)
-EOL
+@socketio.on("voice_command")
+def command(data):
+    riya = RIYA()
+    response = riya.process_command(data['command'])
+    emit("voice_response", {"text": response})
 
-echo "✅ Writing AssistantAI.py..."
-cat > src/core/ai/AssistantAI.py << 'EOL'
-import wikipedia, wolframalpha, os
+if __name__ == "__main__":
+    socketio.run(app, host="0.0.0.0", port=5000)
+EOF
 
-class AssistantAI:
-    def __init__(self):
-        self.client = wolframalpha.Client(os.getenv("WOLFRAM_APP_ID"))
-
-    def handle_query(self, query):
-        try:
-            res = self.client.query(query)
-            ans = next(res.results).text
-            return ans
-        except:
-            try:
-                return wikipedia.summary(query, sentences=2)
-            except:
-                return "Sorry, I could not find an answer."
-EOL
-
-echo "✅ Writing startup.html..."
-cat > src/web/templates/startup.html << 'EOL'
+echo "📑 Creating dashboard.html..."
+cat > ~/riya_ai/src/web/templates/dashboard.html << 'EOF'
 <!DOCTYPE html>
-<html>
-<head><title>Welcome to RIYA AI</title></head>
-<body>
-<h1>RIYA is starting...</h1>
-<script>setTimeout(()=>{window.location.href='/'}, 5000)</script>
-</body>
-</html>
-EOL
-
-echo "✅ Writing dashboard.html..."
-cat > src/web/templates/dashboard.html << 'EOL'
-<!DOCTYPE html>
-<html>
-<head>
-  <title>RIYA AI Dashboard</title>
-  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+<html lang="en">
+<head><meta charset="UTF-8"><title>RIYA Dashboard</title>
+<script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
 </head>
-<body>
-  <h1>RIYA Smart Home Dashboard</h1>
-  <button id="listenBtn">Start Listening</button>
-  <div id="output"></div>
-  <pre id="status"></pre>
+<body style="background:#121212;color:white;">
+<h1>RIYA AI Control Panel</h1>
+<button onclick="startListen()">Start Listening</button>
+<pre id="response"></pre>
 <script>
-  const socket = io();
-  document.getElementById('listenBtn').onclick = ()=>{recognition.start();}
-  const recognition = new(window.SpeechRecognition||window.webkitSpeechRecognition)();
-  recognition.continuous = true; recognition.onresult = (event)=> {
-    const command = event.results[0][0].transcript;
-    document.getElementById('output').innerText = 'You: '+command;
-    socket.emit('voice_command', {command: command});
-  };
-  socket.on('voice_response', data => {document.getElementById('output').innerText += '\\nRIYA: '+data.text});
-  function update() { socket.emit('get_status'); }
-  socket.on('status_update', data => {document.getElementById('status').innerText = JSON.stringify(data,null,2)});
-  setInterval(update, 5000);
+const socket = io();
+function startListen(){ socket.emit("request_intro"); }
+socket.on("start_listening",()=>{ document.getElementById("response").textContent="Listening..."; });
+socket.on("voice_response",(data)=>{ document.getElementById("response").textContent=data.text; });
 </script>
-</body>
-</html>
-EOL
+</body></html>
+EOF
 
-echo "✅ Writing systemd..."
-cat > systemd/riya.service << 'EOL'
+echo "🗂️ Creating systemd service..."
+cat > ~/riya_ai/systemd/riya.service << 'EOF'
 [Unit]
-Description=RIYA Smart Home AI
+Description=RIYA Smart AI
 After=network.target
+
 [Service]
-User=$USER
-WorkingDirectory=/home/$USER/riya_ai
-ExecStart=/usr/bin/python3 src/main.py
+ExecStart=/usr/bin/python3 /home/$USER/riya_ai/src/main.py
+WorkingDirectory=/home/$USER/riya_ai/src
 Restart=always
-Environment=PYTHONUNBUFFERED=1
+
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF
 
-sudo cp systemd/riya.service /etc/systemd/system/
+echo "🔗 Enabling service..."
+sudo cp ~/riya_ai/systemd/riya.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable riya.service
 
-echo "✅ Done! Run: sudo systemctl start riya.service"
-echo "👉 Open: http://$(hostname -I | awk '{print $1}'):5000"
+echo "✅ RIYA installed. Start with: sudo systemctl start riya"
+echo "👉 Dashboard: http://$(hostname -I | awk '{print $1}'):5000"
