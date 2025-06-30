@@ -1,0 +1,11 @@
+Relay 1 (Light 1)	GPIO 2 (Pin 3)	VCC + GND to Pi 5V/GND
+Relay 2 (Light 2)	GPIO 3 (Pin 5)	VCC + GND
+Relay 3 (Light 3)	GPIO 4 (Pin 7)	VCC + GND
+Relay 4 (Light 4)	GPIO 17 (Pin 11)	VCC + GND
+Relay 5 (Light 5)	GPIO 27 (Pin 13)	VCC + GND
+Relay 6 (Light 6)	GPIO 22 (Pin 15)	VCC + GND
+Relay 7 (Light 7)	GPIO 10 (Pin 19)	VCC + GND
+Relay 8 (Light 8)	GPIO 9 (Pin 21)	VCC + GND
+Relay 9 (Pump)	GPIO 11 (Pin 23)	VCC + GND
+DHT22	GPIO 18 (Pin 12)	VCC + GND
+Soil Moisture	GPIO 23 (Pin 16)	VCC + GND
