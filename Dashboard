@@ -1,0 +1,46 @@
+echo "📑 [RIYA AI] Creating smart dashboard..."
+cat > ~/riya_ai/src/web/templates/dashboard.html << 'EOF'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RIYA AI Smart Dashboard</title>
+  <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+  <style>
+    body { background:#111; color:#eee; font-family: Arial, sans-serif; padding:20px; }
+    h1 { color: #00ffcc; text-align:center; }
+    .panel { background: #1a1a1a; padding: 20px; margin: 20px auto; max-width: 900px; border-radius: 10px; }
+    .status-card { background: #222; margin:10px 0; padding:15px; border-left: 5px solid #00ffcc; border-radius: 5px; }
+    button { background: #00ffcc; border: none; padding: 12px 24px; cursor: pointer; color: #000; border-radius: 5px; font-weight: bold; margin:10px 0; }
+    pre { background: #333; padding: 10px; border-radius: 5px; max-height: 200px; overflow-y: auto; }
+    img { width: 100%; border: 3px solid #00ffcc; border-radius: 5px; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>🧠 RIYA AI Smart Control Panel</h1>
+  <div class="panel">
+    <button onclick="startListening()">🎙️ Start Listening</button>
+
+    <div class="status-card"><h3>🔊 Listening Status</h3><div id="statusText">Click to start listening...</div></div>
+    <div class="status-card"><h3>📝 Latest Response</h3><pre id="response"></pre></div>
+    <div class="status-card"><h3>📞 Call Status</h3><pre id="callStatus">No calls yet.</pre></div>
+    <div class="status-card"><h3>🌿 Sensors</h3><pre id="sensors">Moisture: ---% | Temp: --°C | Humidity: --%</pre></div>
+    <div class="status-card"><h3>⚡️ System Performance</h3><pre id="system">CPU: ---% | RAM: ---% | Disk: ---%</pre></div>
+    <div class="status-card"><h3>🔄 System Log</h3><pre id="syslog">No updates yet.</pre></div>
+    <div class="status-card"><h3>💡 Live Snapshot</h3><img src="/static/screenshots/photo.jpg" id="liveImage" /></div>
+  </div>
+  <script>
+    const socket = io();
+    function startListening() { socket.emit("request_intro"); }
+    socket.on("start_listening",()=>{ document.getElementById("statusText").textContent = "🎧 RIYA is listening..."; });
+    socket.on("voice_response",(data)=>{ document.getElementById("response").textContent = data.text; refreshImage(); });
+    socket.on("call_status",(data)=>{ document.getElementById("callStatus").textContent = data; });
+    socket.on("sensor_update",(data)=>{ document.getElementById("sensors").textContent = `Moisture: ${data.moisture}% | Temp: ${data.temp}°C | Humidity: ${data.humidity}%`; });
+    socket.on("system_update",(data)=>{ document.getElementById("system").textContent = `CPU: ${data.cpu}% | RAM: ${data.ram}% | Disk: ${data.disk}%`; });
+    socket.on("syslog",(data)=>{ document.getElementById("syslog").textContent = data; });
+    function refreshImage() { document.getElementById("liveImage").src = "/static/screenshots/photo.jpg?x=" + Math.random(); }
+    setInterval(()=>{ socket.emit("get_system_stats"); socket.emit("get_sensors"); }, 5000);
+  </script>
+</body>
+</html>
+EOF
